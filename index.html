@@ -11,12 +11,14 @@
             overflow: hidden;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
             font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
         }
         canvas {
             display: block;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
         }
 
         /* ========== 提示信息 ========== */
@@ -42,18 +44,13 @@
             padding: 12px 20px;
             background: rgba(20, 20, 40, 0.85);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 140, 180, 0.3);
             border-radius: 50px;
             z-index: 200;
             transition: opacity 0.4s, transform 0.4s;
             user-select: none;
         }
-        #music-panel.hidden {
-            opacity: 0;
-            transform: translateX(-50%) translateY(20px);
-            pointer-events: none;
-        }
-
         /* 播放/暂停按钮 */
         .play-btn {
             width: 42px;
@@ -180,6 +177,7 @@
             padding: 20px 24px;
             background: rgba(20, 20, 45, 0.95);
             backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 140, 180, 0.35);
             border-radius: 16px;
             z-index: 201;
@@ -311,10 +309,97 @@
         #bgm-audio {
             display: none;
         }
+
+        /* ========== 手机端适配 ========== */
+        @media (max-width: 768px) {
+            /* 桌面提示在手机端隐藏，避免与歌词/面板重叠 */
+            #info {
+                display: none;
+            }
+
+            /* 音乐面板：压缩尺寸，适应窄屏 */
+            #music-panel {
+                gap: 8px;
+                padding: 10px 14px;
+                bottom: calc(20px + env(safe-area-inset-bottom));
+            }
+            .play-btn {
+                width: 38px;
+                height: 38px;
+                font-size: 16px;
+            }
+            .song-info {
+                min-width: 76px;
+                max-width: 130px;
+            }
+            .song-name {
+                font-size: 13px;
+            }
+            .song-artist {
+                font-size: 10px;
+            }
+            .progress-bar {
+                width: 96px;
+            }
+            .volume-bar {
+                width: 44px;
+            }
+            .settings-btn {
+                width: 30px;
+                height: 30px;
+            }
+
+            /* 设置弹窗：手机端铺满宽度并贴边 */
+            #music-settings {
+                left: 10px;
+                right: 10px;
+                width: auto;
+                transform: translateY(10px);
+                padding: 16px;
+            }
+            #music-settings.show {
+                transform: translateY(0);
+            }
+
+            /* 歌词在手机端移到顶部居中，避免和底部面板重叠 */
+            #lyrics-container {
+                top: 12px;
+                right: 10px;
+                left: 10px;
+                width: auto;
+                max-height: 26vh;
+                transform: none;
+                text-align: center;
+            }
+            .lyric-line {
+                font-size: 12px;
+                text-align: center;
+            }
+            .lyric-line.active {
+                font-size: 14px;
+            }
+        }
+
+        /* 超窄屏（如小屏手机）进一步压缩，避免面板溢出 */
+        @media (max-width: 420px) {
+            .volume-bar {
+                display: none;
+            }
+            .progress-bar {
+                width: 80px;
+            }
+            .song-info {
+                min-width: 64px;
+                max-width: 96px;
+            }
+            .song-artist {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
-    <div id="info">🖱️ 拖动鼠标移动爱心轨迹 | 🎵 点击右下角按钮打开音乐面板 | ESC 退出全屏</div>
+    <div id="info">🖱️ 拖动鼠标移动爱心轨迹 | 🎵 音乐自动播放 | ESC 退出全屏</div>
 
     <!-- 音乐控制面板 -->
     <div id="music-panel">
@@ -985,19 +1070,30 @@
     }
 
     // ---- 播放/暂停 ----
-    playPauseBtn.addEventListener('click', () => {
+    let playPromise = null;
+    function playMusic(showAlert) {
+        if (playPromise) return playPromise;
         initAudioAnalyser();
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
-        if (audio.paused) {
-            audio.play().then(() => {
-                playPauseBtn.textContent = '⏸';
-                spawnFloatingNotes();
-            }).catch(e => {
-                console.log('播放失败:', e);
+        playPromise = audio.play().then(() => {
+            playPauseBtn.textContent = '⏸';
+            spawnFloatingNotes();
+        }).catch(e => {
+            console.log('播放失败:', e);
+            if (showAlert) {
                 alert('无法播放音乐，请先在⚙设置中选择音乐文件或输入URL');
-            });
+            }
+        }).finally(() => {
+            playPromise = null;
+        });
+        return playPromise;
+    }
+
+    playPauseBtn.addEventListener('click', () => {
+        if (audio.paused) {
+            playMusic(true);
         } else {
             audio.pause();
             playPauseBtn.textContent = '▶';
@@ -1155,22 +1251,29 @@
     songNameEl.textContent = '沦陷 - 王靖雯不胖';
     songArtistEl.textContent = '内置音频';
 
-    // ---- 面板自动隐藏 ----
-    let panelTimeout;
-    const musicPanel = document.getElementById('music-panel');
-    function showPanel() {
-        musicPanel.classList.remove('hidden');
-        clearTimeout(panelTimeout);
-        panelTimeout = setTimeout(() => {
-            if (!musicSettings.classList.contains('show')) {
-                musicPanel.classList.add('hidden');
-            }
-        }, 4000);
+    // ---- 音乐面板常驻显示（不自动隐藏） ----
+    // 面板固定在底部，一直存在，不设置自动隐藏。
+
+    // ---- 进入界面自动播放内置音乐 ----
+    // 优先播放内置《沦陷》；浏览器若因自动播放策略拦截，则在用户首次与页面交互时自动继续播放。
+    function autoPlay() {
+        playMusic(false);
     }
-    musicPanel.addEventListener('mouseenter', () => clearTimeout(panelTimeout));
-    musicPanel.addEventListener('mouseleave', showPanel);
-    settingsBtn.addEventListener('click', () => clearTimeout(panelTimeout));
-    showPanel();
+    autoPlay();
+
+    // 首次用户交互（点击/触摸/按键）时，若尚未开始播放则自动重试，无需手动点击播放按钮
+    function tryAutoPlay(e) {
+        if (e.target && e.target.closest && (e.target.closest('#music-panel') || e.target.closest('#music-settings'))) {
+            return;
+        }
+        if (audio.paused) {
+            playMusic(false);
+        }
+        window.removeEventListener('pointerdown', tryAutoPlay);
+        window.removeEventListener('keydown', tryAutoPlay);
+    }
+    window.addEventListener('pointerdown', tryAutoPlay);
+    window.addEventListener('keydown', tryAutoPlay);
 
     // ---- 音频结束时重置 ----
     audio.addEventListener('ended', () => {
